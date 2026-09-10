@@ -23,6 +23,9 @@ npm run dev
 
 ### 1. Confirmed Order Path (Sufficient Stock)
 
+![Uploading image.png…]()
+
+
 * **HTTP Method & URL**: `POST http://localhost:8080/api/orders`
 * **Status Code**: `200 OK`
 * **Request Payload**:
