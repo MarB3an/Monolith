@@ -1,49 +1,4 @@
 
-### Step 1: Create Supabase Project
-1. Log in to [supabase.com](https://supabase.com) and create a new project.
-2. Note your project reference ID (e.g., `txabiyeodojnqsxmlzwe`) and region (e.g., `ap-southeast-1`).
-
-### Step 2: Run SQL Schema & Seed Script
-Open the **SQL Editor** in your Supabase dashboard, paste the contents of [`supabase-schema.sql`](supabase-schema.sql), and run:
-
-```sql
--- 1. Create Inventory Table
-CREATE TABLE IF NOT EXISTS public.inventory (
-    product_id VARCHAR(50) PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    stock INT NOT NULL CHECK (stock >= 0)
-);
-
--- 2. Create Orders Table
-CREATE TABLE IF NOT EXISTS public.orders (
-    order_id BIGSERIAL PRIMARY KEY,
-    product_id VARCHAR(50) NOT NULL,
-    quantity INT NOT NULL,
-    status VARCHAR(50) NOT NULL,
-    reason TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- 3. Seed Initial Inventory
-INSERT INTO public.inventory (product_id, name, stock)
-VALUES 
-    ('P100', 'Wireless Mouse', 25),
-    ('P200', 'Mechanical Keyboard', 10),
-    ('P300', 'USB-C Hub', 0)
-ON CONFLICT (product_id) DO NOTHING;
-```
-
-### Step 3: Configure Environment Variables
-Create a `.env` file in the root and `backend/` directories containing your Supabase pooler credentials:
-```env
-SPRING_DATASOURCE_URL=jdbc:postgresql://aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
-SPRING_DATASOURCE_USERNAME=postgres.txabiyeodojnqsxmlzwe
-SPRING_DATASOURCE_PASSWORD=YourSupabasePassword!
-```
-
----
-
-## 🚀 Running the Application
 
 ### 1. Launch Spring Boot Backend
 ```bash
@@ -64,6 +19,7 @@ npm run dev
 ---
 
 ## 🌐 Network Tab Evidence (Confirmed + Rejected Order)
+<img width="1919" height="1075" alt="image" src="https://github.com/user-attachments/assets/77f1f982-98e1-4c85-8efb-3356d2a8e56f" />
 
 ### 1. Confirmed Order Path (Sufficient Stock)
 
@@ -120,6 +76,8 @@ npm run dev
     },
     "createdAt": "2026-09-10T20:18:22.104231"
   }
+  <img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/25567c74-9a60-4a14-9290-c561012eb915" />
+
   ```
 * **Supabase Database Impact**:
   - `inventory` table: `P200` stock remains unchanged at **10**.
