@@ -2,48 +2,9 @@
 
 A modular monolith built with Spring Boot and React, demonstrating module boundaries, multi-item transactional orders with all-or-nothing rollback, order cancellation with inventory restock, and in-monolith domain events with asynchronous/synchronous notification logging.
 
----
 
-## 📦 Package Structure
 
-```
-edu.cit.pescante
-├── config
-│   └── CorsConfig.java                     # Global CORS for http://localhost:5173
-├── inventory                               # Inventory Module
-│   ├── InventoryController.java            # GET /api/inventory, GET /api/inventory/{id}
-│   ├── InventoryItem.java                  # JPA Entity mapped to inventory table
-│   ├── InventoryRepository.java            # Spring Data JPA repository
-│   ├── InventoryService.java               # Public interface (reserve, restock, getItem, getAllItems)
-│   ├── InventoryServiceImpl.java           # Package-private implementation + LowStock threshold check
-│   ├── ReservationResult.java              # Result container
-│   └── events
-│       └── LowStockEvent.java              # Domain event published when stock drops < threshold
-├── shop                                    # Order Module
-│   ├── OrderController.java                # POST /api/orders, POST /api/orders/{id}/cancel, GET /api/orders
-│   ├── OrderRecord.java                    # JPA Entity mapped to orders table (with line items)
-│   ├── OrderItemRecord.java                # JPA Entity mapped to order_items table
-│   ├── OrderRepository.java                # Spring Data JPA repository
-│   ├── OrderService.java                   # Pre-validation, all-or-nothing rollback, event publisher
-│   ├── dto
-│   │   ├── CreateOrderRequest.java         # Multi-item request payload { items: [...] }
-│   │   ├── OrderItemRequest.java           # Line item DTO { productId, quantity }
-│   │   ├── OrderItemOutcome.java           # Outcome DTO { productId, quantity, outcome }
-│   │   └── OrderResponse.java              # Standardized response payload
-│   └── events
-│       ├── OrderPlacedEvent.java           # Published on CONFIRMED order
-│       ├── OrderRejectedEvent.java         # Published on REJECTED order
-│       └── OrderCancelledEvent.java        # Published on CANCELLED order
-└── notification                            # Notification Module (New in Lab 2)
-    ├── NotificationRecord.java             # JPA Entity mapped to notifications table
-    ├── NotificationRepository.java         # Spring Data JPA repository
-    ├── NotificationController.java         # GET /api/notifications (activity feed)
-    └── NotificationEventListener.java      # Consumes domain events via Spring @EventListener
-```
-
----
-
-## 🗄️ Supabase Setup Steps
+##  Supabase Setup Steps
 
 ### Step 1: Create Supabase Project
 1. Log in to [supabase.com](https://supabase.com) and create a new project.
@@ -110,7 +71,7 @@ SPRING_DATASOURCE_PASSWORD=YourSupabasePassword!
 
 ---
 
-## 🚀 Running the Application
+## Running the Application
 
 ### 1. Launch Spring Boot Backend
 ```bash
@@ -130,7 +91,7 @@ npm run dev
 
 ---
 
-## 🌐 Network Tab Evidence (All Four Scenarios)
+## Network Tab Evidence (All Four Scenarios)
 
 ### 1. Multi-Item Order Where All Items Succeed (CONFIRMED)
 
@@ -162,7 +123,9 @@ npm run dev
     "orderId": 9,
     "createdAt": "2026-09-17T18:59:12.1847909"
   }
-  ```
+  <img width="1910" height="1040" alt="image" src="https://github.com/user-attachments/assets/fd8116da-82f5-40d1-b6fb-da4b43cc63d8" />
+
+  
 * **Database & Event Impact**:
   - `inventory` table: `P100` stock decremented by 2, `P200` stock decremented by 1.
   - `orders` & `order_items` tables: Order record `#9` created with status `CONFIRMED` and 2 line items saved.
@@ -202,6 +165,8 @@ npm run dev
     "createdAt": "2026-09-17T18:59:20.0645848"
   }
   ```
+  <img width="1902" height="1031" alt="image" src="https://github.com/user-attachments/assets/b9b7d404-716f-4687-8a8e-304e15bfcfe1" />
+
 * **All-or-Nothing Rollback Verification**:
   - `P100` stock was **NOT** decremented—remained at **19**.
   - `P200` stock was **NOT** decremented—remained at **7**.
@@ -248,7 +213,8 @@ npm run dev
   - Order status transitioned to `CANCELLED`.
   - Notification logged: `"Order #9 cancelled - line items restocked to inventory"`.
 
----
+<img width="1917" height="1033" alt="image" src="https://github.com/user-attachments/assets/9eba1bed-9c12-412f-975e-108e9da54111" />
+
 
 ### 4. Notification Feed Showing Confirmed Order, Rejected Order, and Low-Stock Alert
 
@@ -287,9 +253,10 @@ npm run dev
   ```
 * **Feed Summary**: Demonstrates real-time activity feed logging confirmed orders, rejected orders, cancellations, and the distinct **low-stock auto-reorder alert** triggered when stock fell below 5.
 
----
+<img width="1919" height="798" alt="image" src="https://github.com/user-attachments/assets/ba35a074-8c82-4577-ac68-bf07e15d4599" />
 
-## 📝 Architectural Reflection
+
+## Architectural Reflection
 
 ### 1. In-Process Multi-Item Atomicity vs. Distributed Network Sagas
 In our modular monolith, multi-item order atomicity is guaranteed through two mechanisms:
