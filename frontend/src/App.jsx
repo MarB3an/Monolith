@@ -2,22 +2,32 @@ import React, { useState, useEffect } from 'react';
 import './App.css';
 
 const API_BASE_URL = 'http://localhost:8080';
+const LOW_STOCK_THRESHOLD = 5;
 
 export default function App() {
   const [inventory, setInventory] = useState([]);
-  const [selectedProductId, setSelectedProductId] = useState('P100');
-  const [quantity, setQuantity] = useState(1);
+  const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [cancellingOrderId, setCancellingOrderId] = useState(null);
   const [orders, setOrders] = useState([]);
-  
-  // Last Order Result
+  const [notifications, setNotifications] = useState([]);
   const [lastResult, setLastResult] = useState(null);
+  const [toast, setToast] = useState(null);
 
-  // Fetch initial inventory and order history
+  // Initial load
   useEffect(() => {
-    fetchInventory();
-    fetchOrders();
+    refreshAll();
+    // Poll notifications periodically every 8 seconds for live activity
+    const interval = setInterval(() => {
+      fetchNotifications();
+    }, 8000);
+    return () => clearInterval(interval);
   }, []);
+
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   const fetchInventory = async () => {
     try {
@@ -25,9 +35,6 @@ export default function App() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setInventory(data);
-      if (data.length > 0 && !selectedProductId) {
-        setSelectedProductId(data[0].productId);
-      }
     } catch (err) {
       console.error('Inventory fetch error:', err);
     }
@@ -44,63 +51,173 @@ export default function App() {
     }
   };
 
-  const handleQuantityChange = (newVal) => {
-    const val = Math.max(1, parseInt(newVal, 10) || 1);
-    setQuantity(val);
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/notifications`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setNotifications(data);
+    } catch (err) {
+      console.error('Notifications fetch error:', err);
+    }
   };
 
+  const refreshAll = async () => {
+    await Promise.all([fetchInventory(), fetchOrders(), fetchNotifications()]);
+  };
+
+  // Cart operations
+  const addToCart = (product) => {
+    setCart(prev => {
+      const existing = prev.find(item => item.productId === product.productId);
+      if (existing) {
+        return prev.map(item =>
+          item.productId === product.productId
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        );
+      }
+      return [...prev, { productId: product.productId, name: product.name, quantity: 1 }];
+    });
+    showToast(`Added ${product.name} to cart`, 'success');
+  };
+
+  const updateCartQuantity = (productId, newQty) => {
+    const qty = Math.max(1, parseInt(newQty, 10) || 1);
+    setCart(prev =>
+      prev.map(item =>
+        item.productId === productId ? { ...item, quantity: qty } : item
+      )
+    );
+  };
+
+  const removeFromCart = (productId) => {
+    setCart(prev => prev.filter(item => item.productId !== productId));
+  };
+
+  const clearCart = () => {
+    setCart([]);
+  };
+
+  const loadPreset = (presetType) => {
+    if (presetType === 'success') {
+      setCart([
+        { productId: 'P100', name: 'Wireless Mouse', quantity: 2 },
+        { productId: 'P200', name: 'Mechanical Keyboard', quantity: 1 }
+      ]);
+      showToast('Loaded preset: Valid Multi-Item Order (2x P100, 1x P200)', 'info');
+    } else if (presetType === 'reject') {
+      setCart([
+        { productId: 'P100', name: 'Wireless Mouse', quantity: 2 },
+        { productId: 'P200', name: 'Mechanical Keyboard', quantity: 15 } // stock is 10
+      ]);
+      showToast('Loaded preset: Exceeds Stock (15x P200 exceeds 10) - Tests Rollback', 'warning');
+    } else if (presetType === 'lowstock') {
+      // Find P100 or P200 to drop below 5
+      const p100 = inventory.find(i => i.productId === 'P100');
+      const qty = p100 ? Math.max(1, p100.stock - 3) : 22;
+      setCart([
+        { productId: 'P100', name: 'Wireless Mouse', quantity: qty }
+      ]);
+      showToast(`Loaded preset: Drops P100 stock to 3 (< 5) to trigger Low-Stock Alert!`, 'info');
+    }
+  };
+
+  // Submit Order (Transactional Multi-Item)
   const handleSubmitOrder = async (e) => {
     e.preventDefault();
-    if (!selectedProductId || quantity <= 0) return;
+    if (cart.length === 0) {
+      showToast('Cart is empty. Add at least one item.', 'warning');
+      return;
+    }
 
     setLoading(true);
     try {
+      const payload = {
+        items: cart.map(item => ({
+          productId: item.productId,
+          quantity: item.quantity
+        }))
+      };
+
       const res = await fetch(`${API_BASE_URL}/api/orders`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          productId: selectedProductId,
-          quantity: Number(quantity)
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
 
       if (!res.ok) {
         const errText = await res.text();
-        throw new Error(errText || `Server error: ${res.status}`);
+        throw new Error(errText || `Server returned ${res.status}`);
       }
 
       const data = await res.json();
-      setLastResult({
-        status: data.status,
-        reason: data.reason,
-        requestedProduct: selectedProductId,
-        requestedQuantity: quantity,
-        orderId: data.orderId,
-        inventory: data.inventory
-      });
+      setLastResult(data);
 
-      // Refresh UI data directly from Supabase via backend
-      await fetchInventory();
-      await fetchOrders();
+      if (data.status === 'CONFIRMED') {
+        showToast(`Order #${data.orderId} CONFIRMED! All items reserved.`, 'success');
+        setCart([]); // Clear cart upon successful reservation
+      } else {
+        showToast(`Order REJECTED: ${data.reason}`, 'error');
+      }
+
+      await refreshAll();
     } catch (err) {
-      console.error('Order submission error:', err);
+      console.error('Order placement error:', err);
+      showToast(err.message || 'Failed to submit order', 'error');
       setLastResult({
         status: 'REJECTED',
-        reason: err.message || 'Unexpected error while placing order',
-        requestedProduct: selectedProductId,
-        requestedQuantity: quantity
+        reason: err.message || 'Network error occurred',
+        items: cart.map(c => ({ productId: c.productId, quantity: c.quantity, outcome: 'ERROR' }))
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const selectedProduct = inventory.find(p => p.productId === selectedProductId);
+  // Cancel Order & Restock
+  const handleCancelOrder = async (orderId) => {
+    if (!window.confirm(`Are you sure you want to cancel Order #${orderId} and return all items to stock?`)) {
+      return;
+    }
+
+    setCancellingOrderId(orderId);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/orders/${orderId}/cancel`, {
+        method: 'POST'
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error(`Order #${orderId} does not exist (404)`);
+        } else if (res.status === 409) {
+          throw new Error(`Order #${orderId} is already CANCELLED (409)`);
+        } else {
+          const text = await res.text();
+          throw new Error(text || `HTTP ${res.status}`);
+        }
+      }
+
+      const data = await res.json();
+      showToast(`Order #${orderId} CANCELLED. All line items restocked to inventory.`, 'success');
+      await refreshAll();
+    } catch (err) {
+      console.error('Cancellation error:', err);
+      showToast(err.message || 'Failed to cancel order', 'error');
+    } finally {
+      setCancellingOrderId(null);
+    }
+  };
 
   return (
     <div className="app-container">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`toast-notification ${toast.type}`}>
+          <span>{toast.message}</span>
+        </div>
+      )}
+
       {/* Header */}
       <header className="app-header">
         <div>
@@ -108,10 +225,12 @@ export default function App() {
             <span>Modular Monolith</span>
             <span>•</span>
             <span>Pescante</span>
+            <span>•</span>
+            <span>Lab 2</span>
           </div>
-          <h1 className="brand-title">Order & Inventory System</h1>
+          <h1 className="brand-title">Order &amp; Inventory System</h1>
           <p className="brand-subtitle">
-            In-process Spring Boot integration (<code>edu.cit.pescante.shop</code> &amp; <code>edu.cit.pescante.inventory</code>) backed by Supabase Postgres
+            Multi-Item Orders • All-or-Nothing Rollback • In-Monolith Domain Events • Low-Stock Alerts
           </p>
         </div>
 
@@ -124,52 +243,103 @@ export default function App() {
             <span className="dot db"></span>
             <span>Supabase PostgreSQL</span>
           </div>
+          <div className="integration-badge">
+            <span className="dot event"></span>
+            <span>Spring EventPublisher</span>
+          </div>
+          <button onClick={refreshAll} className="refresh-main-btn" title="Refresh all data">
+            ↻ Refresh All
+          </button>
         </div>
       </header>
 
-      {/* Live Inventory Status Overview */}
-      <section style={{ marginBottom: '2.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Live Inventory Catalog
-          </h2>
-          <button 
-            onClick={fetchInventory}
-            className="chip-btn"
-            title="Refresh stock levels from database"
-          >
-            ↻ Refresh Stock
-          </button>
-        </div>
-
-        <div className="inventory-grid">
-          {inventory.map(item => (
-            <div 
-              key={item.productId}
-              className="product-card"
-              onClick={() => setSelectedProductId(item.productId)}
-              style={{
-                cursor: 'pointer',
-                borderColor: selectedProductId === item.productId ? 'var(--indigo-500)' : 'var(--border-subtle)',
-                background: selectedProductId === item.productId ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-card)'
-              }}
-            >
-              <div className="product-info">
-                <h4>{item.name}</h4>
-                <span>{item.productId}</span>
+      {/* SECTION 1: Product Catalog & Multi-Item Cart */}
+      <section className="catalog-and-cart-section">
+        {/* Left: Product Catalog */}
+        <div className="glass-panel catalog-panel">
+          <div className="card-header">
+            <div>
+              <div className="card-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                  <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                  <line x1="12" y1="22.08" x2="12" y2="12"/>
+                </svg>
+                Product Catalog
               </div>
-              <div className={`stock-pill ${item.stock > 0 ? 'in-stock' : 'out-stock'}`}>
-                {item.stock > 0 ? `${item.stock} in stock` : 'Out of stock'}
+              <div className="card-desc">Click &quot;Add to Cart&quot; to build a multi-item order</div>
+            </div>
+          </div>
+
+          <div className="card-body">
+            <div className="product-catalog-list">
+              {inventory.map(item => {
+                const isOutOfStock = item.stock <= 0;
+                const isLowStock = item.stock > 0 && item.stock < LOW_STOCK_THRESHOLD;
+
+                return (
+                  <div
+                    key={item.productId}
+                    className={`catalog-item-card ${isOutOfStock ? 'card-out' : isLowStock ? 'card-low' : ''}`}
+                  >
+                    <div className="catalog-item-main">
+                      <div className="item-id-tag">{item.productId}</div>
+                      <div className="item-name">{item.name}</div>
+                      <div className="item-stock-indicator">
+                        <span className={`stock-badge ${isOutOfStock ? 'badge-out' : isLowStock ? 'badge-low' : 'badge-ok'}`}>
+                          {isOutOfStock ? '0 (Out of Stock)' : isLowStock ? `${item.stock} in stock (Low Stock!)` : `${item.stock} in stock`}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="add-to-cart-btn"
+                      onClick={() => addToCart(item)}
+                      title={`Add ${item.name} to multi-item cart`}
+                    >
+                      + Add to Cart
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Quick Test Presets */}
+            <div className="presets-container">
+              <div className="presets-label">⚡ Fast Scenario Presets:</div>
+              <div className="preset-buttons-row">
+                <button
+                  type="button"
+                  className="preset-btn success"
+                  onClick={() => loadPreset('success')}
+                  title="2x P100, 1x P200 (both in stock)"
+                >
+                  ✓ Valid Order Preset
+                </button>
+                <button
+                  type="button"
+                  className="preset-btn reject"
+                  onClick={() => loadPreset('reject')}
+                  title="1x P100, 15x P200 (P200 stock is only 10 -> Triggers rollback!)"
+                >
+                  ✕ Exceeds Stock Preset (Rollback)
+                </button>
+                <button
+                  type="button"
+                  className="preset-btn lowstock"
+                  onClick={() => loadPreset('lowstock')}
+                  title="Drops P100 stock to 3 (< 5 threshold) to trigger LowStock event"
+                >
+                  ⚠ Low-Stock Alert Preset
+                </button>
               </div>
             </div>
-          ))}
+          </div>
         </div>
-      </section>
 
-      {/* Main Grid: Order Form + Result Area */}
-      <div className="main-grid">
-        {/* Order Form Card */}
-        <div className="glass-panel">
+        {/* Right: Multi-Item Cart */}
+        <div className="glass-panel cart-panel">
           <div className="card-header">
             <div>
               <div className="card-title">
@@ -177,265 +347,397 @@ export default function App() {
                   <circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/>
                   <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>
                 </svg>
-                Place New Order
+                Active Order Cart
+                {cart.length > 0 && <span className="cart-counter">{cart.length} item(s)</span>}
               </div>
-              <div className="card-desc">HTTP POST /api/orders (triggers in-process inventory reservation)</div>
+              <div className="card-desc">HTTP POST /api/orders (All-or-nothing transactional reservation)</div>
             </div>
-          </div>
 
-          <div className="card-body">
-            <form onSubmit={handleSubmitOrder}>
-              {/* Product Selection */}
-              <div className="form-group">
-                <label className="form-label" htmlFor="product-select">Select Product</label>
-                <div className="select-wrapper">
-                  <select 
-                    id="product-select"
-                    className="custom-select"
-                    value={selectedProductId}
-                    onChange={(e) => setSelectedProductId(e.target.value)}
-                  >
-                    {inventory.map(p => (
-                      <option key={p.productId} value={p.productId}>
-                        {p.productId} — {p.name} ({p.stock} available)
-                      </option>
-                    ))}
-                  </select>
-                  <div className="select-arrow">▼</div>
-                </div>
-              </div>
-
-              {/* Quantity Stepper */}
-              <div className="form-group">
-                <label className="form-label" htmlFor="quantity-input">Order Quantity</label>
-                <div className="quantity-stepper">
-                  <button 
-                    type="button"
-                    className="stepper-btn"
-                    onClick={() => handleQuantityChange(quantity - 1)}
-                    disabled={quantity <= 1 || loading}
-                    aria-label="Decrease quantity"
-                  >
-                    −
-                  </button>
-                  <input 
-                    id="quantity-input"
-                    type="number"
-                    min="1"
-                    className="quantity-input"
-                    value={quantity}
-                    onChange={(e) => handleQuantityChange(e.target.value)}
-                    disabled={loading}
-                  />
-                  <button 
-                    type="button"
-                    className="stepper-btn"
-                    onClick={() => handleQuantityChange(quantity + 1)}
-                    disabled={loading}
-                    aria-label="Increase quantity"
-                  >
-                    +
-                  </button>
-                </div>
-
-                {/* Preset Chips */}
-                <div className="quick-quantities">
-                  {[1, 2, 5, 10].map(n => (
-                    <button
-                      key={n}
-                      type="button"
-                      className="chip-btn"
-                      onClick={() => setQuantity(n)}
-                    >
-                      +{n}
-                    </button>
-                  ))}
-                  {selectedProduct && selectedProduct.stock > 0 && (
-                    <button
-                      type="button"
-                      className="chip-btn"
-                      onClick={() => setQuantity(selectedProduct.stock)}
-                    >
-                      Max ({selectedProduct.stock})
-                    </button>
-                  )}
-                  {/* Quick test preset for rejected path */}
-                  <button
-                    type="button"
-                    className="chip-btn"
-                    style={{ borderColor: 'var(--rose-border)', color: 'var(--rose-400)' }}
-                    onClick={() => {
-                      if (selectedProduct && selectedProduct.stock > 0) {
-                        setQuantity(selectedProduct.stock + 10);
-                      } else {
-                        setQuantity(1);
-                      }
-                    }}
-                    title="Set quantity higher than stock to test REJECTED path"
-                  >
-                    Exceed Stock (Test Reject)
-                  </button>
-                </div>
-              </div>
-
-              {/* Submit Button */}
-              <button 
-                id="submit-order-btn"
-                type="submit" 
-                className="submit-btn" 
-                disabled={loading || !selectedProductId}
-              >
-                {loading ? (
-                  <span>Processing In-Process Reservation...</span>
-                ) : (
-                  <>
-                    <span>Submit Order via REST</span>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="5" y1="12" x2="19" y2="12"></line>
-                      <polyline points="12 5 19 12 12 19"></polyline>
-                    </svg>
-                  </>
-                )}
+            {cart.length > 0 && (
+              <button type="button" onClick={clearCart} className="clear-cart-btn">
+                Clear Cart
               </button>
-            </form>
-          </div>
-        </div>
-
-        {/* Result Showcase Card */}
-        <div className="glass-panel">
-          <div className="card-header">
-            <div>
-              <div className="card-title">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                  <polyline points="22 4 12 14.01 9 11.01"/>
-                </svg>
-                Order Result Area
-              </div>
-              <div className="card-desc">Evaluated by OrderService &amp; InventoryService</div>
-            </div>
+            )}
           </div>
 
           <div className="card-body">
-            {lastResult ? (
-              <div 
-                id="order-result-area"
-                className={`result-container ${lastResult.status.toLowerCase()} animate-pop-in`}
-              >
-                <div className={`status-badge-lg ${lastResult.status.toLowerCase()}`}>
-                  {lastResult.status === 'CONFIRMED' ? (
-                    <>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12"/>
-                      </svg>
-                      CONFIRMED
-                    </>
-                  ) : (
-                    <>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
-                      </svg>
-                      REJECTED
-                    </>
-                  )}
-                </div>
-
-                <div className="result-reason">
-                  {lastResult.reason}
-                </div>
-
-                <div className="result-meta-grid">
-                  <div className="meta-item">
-                    <span className="meta-label">Product</span>
-                    <span className="meta-val">{lastResult.requestedProduct}</span>
-                  </div>
-                  <div className="meta-item">
-                    <span className="meta-label">Quantity</span>
-                    <span className="meta-val">{lastResult.requestedQuantity} unit(s)</span>
-                  </div>
-                  <div className="meta-item">
-                    <span className="meta-label">Current Stock</span>
-                    <span className="meta-val">
-                      {lastResult.inventory ? `${lastResult.inventory.stock} remaining` : 'N/A'}
-                    </span>
-                  </div>
-                  <div className="meta-item">
-                    <span className="meta-label">Order Record ID</span>
-                    <span className="meta-val">#{lastResult.orderId || 'Audit Logged'}</span>
-                  </div>
+            {cart.length === 0 ? (
+              <div className="empty-cart-state">
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.35 }}>
+                  <circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/>
+                  <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>
+                </svg>
+                <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginTop: '0.5rem' }}>Your Cart is Empty</div>
+                <div style={{ fontSize: '0.825rem', color: 'var(--text-muted)' }}>
+                  Click &quot;+ Add to Cart&quot; on products from the catalog or click a preset to get started.
                 </div>
               </div>
             ) : (
-              <div className="result-container idle">
-                <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4, marginBottom: '0.75rem' }}>
-                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                  <line x1="8" y1="21" x2="16" y2="21"/>
-                  <line x1="12" y1="17" x2="12" y2="21"/>
-                </svg>
-                <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No orders submitted yet</div>
-                <div style={{ fontSize: '0.825rem', marginTop: '0.25rem' }}>
-                  Select a product, choose quantity, and click Submit Order to see CONFIRMED or REJECTED results.
+              <form onSubmit={handleSubmitOrder}>
+                <div className="cart-items-list">
+                  {cart.map(item => {
+                    const matchedInv = inventory.find(i => i.productId === item.productId);
+                    const stock = matchedInv ? matchedInv.stock : 0;
+                    const exceeds = item.quantity > stock;
+
+                    return (
+                      <div key={item.productId} className={`cart-item-row ${exceeds ? 'row-exceeds' : ''}`}>
+                        <div className="cart-item-desc">
+                          <div className="cart-item-title">
+                            <strong>{item.productId}</strong> — {item.name}
+                          </div>
+                          <div className="cart-item-stock-hint">
+                            Available: <strong>{stock}</strong>
+                            {exceeds && (
+                              <span className="stock-warning-tag">
+                                ⚠ Exceeds current stock ({stock})!
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="cart-stepper">
+                          <button
+                            type="button"
+                            className="cart-step-btn"
+                            onClick={() => updateCartQuantity(item.productId, item.quantity - 1)}
+                            disabled={item.quantity <= 1 || loading}
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.quantity}
+                            onChange={(e) => updateCartQuantity(item.productId, e.target.value)}
+                            className="cart-qty-input"
+                            disabled={loading}
+                          />
+                          <button
+                            type="button"
+                            className="cart-step-btn"
+                            onClick={() => updateCartQuantity(item.productId, item.quantity + 1)}
+                            disabled={loading}
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="cart-remove-btn"
+                          onClick={() => removeFromCart(item.productId)}
+                          disabled={loading}
+                          title="Remove item"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
+
+                <div className="cart-summary-footer">
+                  <div className="cart-total-line">
+                    <span>Total Line Items:</span>
+                    <strong>{cart.length} product(s)</strong>
+                  </div>
+                  <div className="cart-total-line">
+                    <span>Total Units:</span>
+                    <strong>{cart.reduce((acc, i) => acc + i.quantity, 0)} unit(s)</strong>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  id="submit-multi-order-btn"
+                  className="submit-btn"
+                  disabled={loading || cart.length === 0}
+                >
+                  {loading ? (
+                    <span>Validating Stock &amp; Reserving Line Items...</span>
+                  ) : (
+                    <>
+                      <span>Submit Multi-Item Order (REST POST)</span>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                        <polyline points="12 5 19 12 12 19"></polyline>
+                      </svg>
+                    </>
+                  )}
+                </button>
+              </form>
             )}
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Order History / Audit Log */}
-      <section className="glass-panel" style={{ marginTop: '2.5rem' }}>
+      {/* SECTION 2: Order Result Showcase */}
+      {lastResult && (
+        <section className="glass-panel result-showcase-panel animate-pop-in" style={{ marginBottom: '2.5rem' }}>
+          <div className="card-header">
+            <div className="card-title">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+              Order Submission Result
+            </div>
+            <span className="card-desc">Response from OrderService</span>
+          </div>
+
+          <div className="card-body">
+            <div className={`result-container ${lastResult.status.toLowerCase()}`}>
+              <div className="result-header-row">
+                <div className={`status-badge-lg ${lastResult.status.toLowerCase()}`}>
+                  {lastResult.status === 'CONFIRMED' ? '✓ CONFIRMED' : '✕ REJECTED'}
+                </div>
+                {lastResult.orderId && (
+                  <div className="order-id-pill">Order #{lastResult.orderId}</div>
+                )}
+              </div>
+
+              <div className="result-reason">{lastResult.reason}</div>
+
+              {/* Multi-Item Outcomes List */}
+              {lastResult.items && lastResult.items.length > 0 && (
+                <div className="result-items-box">
+                  <div className="result-items-title">Itemized Line-Item Outcomes:</div>
+                  <div className="result-items-grid">
+                    {lastResult.items.map((it, idx) => (
+                      <div key={idx} className={`outcome-item-card outcome-${it.outcome ? it.outcome.toLowerCase() : 'unknown'}`}>
+                        <div className="outcome-item-header">
+                          <strong>{it.productId}</strong>
+                          {it.quantity && <span>Qty: {it.quantity}</span>}
+                        </div>
+                        <div className="outcome-badge">
+                          {it.outcome === 'RESERVED' && '✓ RESERVED'}
+                          {it.outcome === 'EXCEEDS_STOCK' && '✕ EXCEEDS STOCK'}
+                          {it.outcome === 'ROLLBACK_UNFULFILLED' && '⚠ ROLLBACK (UNFULFILLED)'}
+                          {it.outcome === 'PRODUCT_NOT_FOUND' && '✕ NOT FOUND'}
+                          {it.outcome !== 'RESERVED' && it.outcome !== 'EXCEEDS_STOCK' && it.outcome !== 'ROLLBACK_UNFULFILLED' && it.outcome !== 'PRODUCT_NOT_FOUND' && (it.outcome || 'EVALUATED')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* SECTION 3: Live Inventory Table with Low-Stock Highlighting */}
+      <section className="glass-panel" style={{ marginBottom: '2.5rem' }}>
         <div className="card-header">
           <div>
             <div className="card-title">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
               </svg>
-              Order Audit Log (Database <code>orders</code> table)
+              Live Inventory Table (Auto-Refreshes on Order &amp; Cancel)
             </div>
-            <div className="card-desc">Every order attempt is recorded with status, reason, and timestamp</div>
+            <div className="card-desc">GET /api/inventory • Rows highlighted when stock is below threshold ({LOW_STOCK_THRESHOLD})</div>
           </div>
-          <button onClick={fetchOrders} className="chip-btn">↻ Refresh</button>
+          <button onClick={fetchInventory} className="chip-btn">↻ Refresh Stock</button>
         </div>
 
         <div style={{ overflowX: 'auto' }}>
-          <table className="orders-table" id="orders-history-table">
+          <table className="orders-table" id="inventory-table">
             <thead>
               <tr>
-                <th>Order ID</th>
-                <th>Product</th>
-                <th>Qty</th>
-                <th>Status</th>
-                <th>Reason</th>
-                <th>Timestamp</th>
+                <th>Product ID</th>
+                <th>Product Name</th>
+                <th>Current Stock</th>
+                <th>Status &amp; Alert</th>
               </tr>
             </thead>
             <tbody>
-              {orders.length > 0 ? (
-                orders.map((o) => (
-                  <tr key={o.orderId}>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>#{o.orderId}</td>
-                    <td><strong>{o.productId}</strong></td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>{o.quantity}</td>
-                    <td>
-                      <span className={`table-status ${o.status}`}>{o.status}</span>
+              {inventory.map(item => {
+                const isOutOfStock = item.stock <= 0;
+                const isLowStock = item.stock > 0 && item.stock < LOW_STOCK_THRESHOLD;
+
+                return (
+                  <tr
+                    key={item.productId}
+                    className={`inventory-table-row ${isOutOfStock ? 'row-out-of-stock' : isLowStock ? 'row-low-stock' : ''}`}
+                  >
+                    <td><strong style={{ fontFamily: 'var(--font-mono)' }}>{item.productId}</strong></td>
+                    <td>{item.name}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '1.05rem', fontWeight: 700 }}>
+                      {item.stock}
                     </td>
-                    <td style={{ maxWidth: '380px' }}>{o.reason}</td>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      {o.createdAt ? new Date(o.createdAt).toLocaleString() : 'Just now'}
+                    <td>
+                      {isOutOfStock && (
+                        <span className="stock-pill out-stock">
+                          ✕ Out of Stock (0)
+                        </span>
+                      )}
+                      {isLowStock && (
+                        <span className="stock-pill low-stock-alert">
+                          ⚠ Low Stock Alert ({item.stock} &lt; {LOW_STOCK_THRESHOLD}) — Reorder Needed
+                        </span>
+                      )}
+                      {!isOutOfStock && !isLowStock && (
+                        <span className="stock-pill in-stock">
+                          ✓ Normal Stock ({item.stock})
+                        </span>
+                      )}
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                    No order history recorded yet in the orders table.
-                  </td>
-                </tr>
-              )}
+                );
+              })}
             </tbody>
           </table>
         </div>
       </section>
+
+      {/* SECTION 4: Dual Feed: Order History (with Cancel) & Notification Activity Feed */}
+      <div className="bottom-dual-grid">
+        {/* Left: Order History & Audit Log */}
+        <section className="glass-panel">
+          <div className="card-header">
+            <div>
+              <div className="card-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
+                Order History &amp; Actions
+              </div>
+              <div className="card-desc">GET /api/orders • Cancel button triggers POST /api/orders/{'{id}'}/cancel &amp; restocks items</div>
+            </div>
+            <button onClick={fetchOrders} className="chip-btn">↻ Refresh</button>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table className="orders-table" id="orders-history-table">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Line Items</th>
+                  <th>Status</th>
+                  <th>Reason</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.length > 0 ? (
+                  orders.map(o => (
+                    <tr key={o.orderId}>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>#{o.orderId}</td>
+                      <td>
+                        <div className="history-items-tags">
+                          {o.items && o.items.length > 0 ? (
+                            o.items.map((it, idx) => (
+                              <span key={idx} className="item-pill-tag">
+                                {it.quantity}x {it.productId}
+                              </span>
+                            ))
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)' }}>None</span>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <span className={`table-status ${o.status}`}>{o.status}</span>
+                      </td>
+                      <td style={{ fontSize: '0.825rem', maxWidth: '240px' }}>{o.reason}</td>
+                      <td>
+                        {o.status === 'CONFIRMED' ? (
+                          <button
+                            type="button"
+                            className="cancel-order-btn"
+                            onClick={() => handleCancelOrder(o.orderId)}
+                            disabled={cancellingOrderId === o.orderId}
+                            title="Cancel this order and return all reserved items to stock"
+                          >
+                            {cancellingOrderId === o.orderId ? 'Restocking...' : 'Cancel & Restock'}
+                          </button>
+                        ) : o.status === 'CANCELLED' ? (
+                          <span className="cancelled-label">Cancelled</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>N/A (Rejected)</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="5" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                      No orders placed yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Right: In-Monolith Domain Event Activity Feed (Notification Module) */}
+        <section className="glass-panel">
+          <div className="card-header">
+            <div>
+              <div className="card-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+                Domain Event Notifications
+              </div>
+              <div className="card-desc">GET /api/notifications • Consumed via Spring @EventListener by Notification module</div>
+            </div>
+            <button onClick={fetchNotifications} className="chip-btn">↻ Refresh</button>
+          </div>
+
+          <div className="notifications-feed-body">
+            {notifications.length > 0 ? (
+              <div className="notifications-feed-list">
+                {notifications.map(n => {
+                  const isLowStock = n.message.includes('Low stock') || n.message.includes('reorder');
+                  const isRejected = n.message.includes('rejected');
+                  const isCancelled = n.message.includes('cancelled');
+                  const isConfirmed = n.message.includes('confirmed');
+
+                  return (
+                    <div
+                      key={n.notificationId}
+                      className={`notification-card ${isLowStock ? 'notif-lowstock' : isRejected ? 'notif-rejected' : isCancelled ? 'notif-cancelled' : 'notif-confirmed'}`}
+                    >
+                      <div className="notif-icon">
+                        {isLowStock && '⚠'}
+                        {isRejected && '✕'}
+                        {isCancelled && '↺'}
+                        {isConfirmed && '✓'}
+                      </div>
+                      <div className="notif-content">
+                        <div className="notif-message">{n.message}</div>
+                        <div className="notif-meta">
+                          <span>Notification #{n.notificationId}</span>
+                          <span>•</span>
+                          <span>{n.createdAt ? new Date(n.createdAt).toLocaleTimeString() : 'Just now'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="empty-notifs-state">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.35 }}>
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+                <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginTop: '0.5rem' }}>No Notifications Yet</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Events published by Order &amp; Inventory modules will stream here.
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

@@ -52,4 +52,33 @@ class ArchitectureBoundaryTest {
         assertTrue(hasInventoryServiceParam,
                 "OrderService must take InventoryService interface in its constructor for dependency injection");
     }
+
+    @Test
+    @DisplayName("Verify Notification module does NOT depend on OrderService or InventoryService")
+    void verifyNotificationModuleDoesNotDependOnServices() throws ClassNotFoundException {
+        Class<?> listenerClass = Class.forName("edu.cit.pescante.notification.NotificationEventListener");
+        Constructor<?>[] constructors = listenerClass.getConstructors();
+
+        for (Constructor<?> constructor : constructors) {
+            for (Class<?> param : constructor.getParameterTypes()) {
+                assertFalse(param.getName().contains("OrderService"),
+                        "Notification module must never depend on OrderService!");
+                assertFalse(param.getName().contains("InventoryService"),
+                        "Notification module must never depend on InventoryService!");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Verify Order module does NOT depend on Notification module")
+    void verifyOrderModuleDoesNotDependOnNotification() {
+        Constructor<?>[] constructors = OrderService.class.getConstructors();
+
+        for (Constructor<?> constructor : constructors) {
+            for (Class<?> param : constructor.getParameterTypes()) {
+                assertFalse(param.getName().startsWith("edu.cit.pescante.notification"),
+                        "OrderService must never depend on the Notification module!");
+            }
+        }
+    }
 }

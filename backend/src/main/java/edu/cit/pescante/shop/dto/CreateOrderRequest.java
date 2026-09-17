@@ -1,24 +1,43 @@
 package edu.cit.pescante.shop.dto;
 
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.Valid;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class CreateOrderRequest {
 
-    @NotBlank(message = "productId is required")
-    private String productId;
+    private List<@Valid OrderItemRequest> items;
 
-    @NotNull(message = "quantity is required")
-    @Min(value = 1, message = "quantity must be at least 1")
+    // Optional fields for backwards compatibility with single-item orders
+    private String productId;
     private Integer quantity;
 
     public CreateOrderRequest() {
     }
 
+    public CreateOrderRequest(List<OrderItemRequest> items) {
+        this.items = items;
+    }
+
     public CreateOrderRequest(String productId, Integer quantity) {
         this.productId = productId;
         this.quantity = quantity;
+        this.items = new ArrayList<>(List.of(new OrderItemRequest(productId, quantity)));
+    }
+
+    public List<OrderItemRequest> getItems() {
+        if (items != null && !items.isEmpty()) {
+            return items;
+        }
+        if (productId != null && !productId.trim().isEmpty() && quantity != null && quantity > 0) {
+            return List.of(new OrderItemRequest(productId.trim(), quantity));
+        }
+        return items != null ? items : new ArrayList<>();
+    }
+
+    public void setItems(List<OrderItemRequest> items) {
+        this.items = items;
     }
 
     public String getProductId() {
@@ -35,5 +54,12 @@ public class CreateOrderRequest {
 
     public void setQuantity(Integer quantity) {
         this.quantity = quantity;
+    }
+
+    @Override
+    public String toString() {
+        return "CreateOrderRequest{" +
+                "items=" + getItems() +
+                '}';
     }
 }

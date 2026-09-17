@@ -20,4 +20,9 @@ public interface InventoryService {
      * Lists all inventory items (useful for populating frontend dropdown).
      */
     List<InventoryItem> getAllItems();
+
+    /**
+     * Returns reserved quantity of a product back to stock upon order cancellation.
+     */
+    void restock(String productId, int quantity);
 }
