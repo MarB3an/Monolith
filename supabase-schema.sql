@@ -1,9 +1,10 @@
 -- ==============================================================================
 -- Supabase (PostgreSQL) Schema and Seed Script for Monolith Shop Activity
--- Lab 2: Multi-Item Orders, Cancellation, Domain Events & Notifications
+-- Lab 3: LegacySupply Anti-Corruption Layer added supplier_orders table
 -- ==============================================================================
 
 -- Drop existing tables to recreate cleanly from scratch
+DROP TABLE IF EXISTS supplier_orders CASCADE;
 DROP TABLE IF EXISTS notifications CASCADE;
 DROP TABLE IF EXISTS order_items CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
@@ -39,7 +40,23 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
--- 5. Seed initial inventory products
+-- 5. Create supplier_orders table (Lab 3 - LegacySupply ACL)
+--    Tracks every reorder placed with LegacySupply.
+--    Status column uses our domain enum, never LegacySupply status codes directly.
+CREATE TABLE IF NOT EXISTS supplier_orders (
+    id             BIGSERIAL PRIMARY KEY,
+    product_id     VARCHAR(50)  NOT NULL,
+    buyer_ref      VARCHAR(50)  UNIQUE,
+    request_id     VARCHAR(100) UNIQUE,
+    po_number      VARCHAR(50),
+    cases          INTEGER      NOT NULL,
+    units          INTEGER      NOT NULL,
+    status         VARCHAR(30)  NOT NULL DEFAULT 'PENDING',
+    created_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- 6. Seed initial inventory products
 INSERT INTO inventory (product_id, name, stock) VALUES
     ('P100', 'Wireless Mouse', 25),
     ('P200', 'Mechanical Keyboard', 10),
@@ -49,4 +66,4 @@ SET name = EXCLUDED.name, stock = EXCLUDED.stock;
 
 -- Verify seeded data
 SELECT * FROM inventory;
-
+SELECT * FROM supplier_orders;

@@ -4,6 +4,7 @@ import edu.cit.pescante.inventory.events.LowStockEvent;
 import edu.cit.pescante.shop.events.OrderCancelledEvent;
 import edu.cit.pescante.shop.events.OrderPlacedEvent;
 import edu.cit.pescante.shop.events.OrderRejectedEvent;
+import edu.cit.pescante.supplier.SupplierDeliveryEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -51,6 +52,14 @@ public class NotificationEventListener {
     @EventListener
     public void handleOrderCancelled(OrderCancelledEvent event) {
         String msg = "Order #" + event.getOrderId() + " cancelled - line items restocked to inventory";
+        log.info("Notification received: {}", msg);
+        notificationRepository.save(new NotificationRecord(msg));
+    }
+
+    @EventListener
+    public void handleSupplierDelivery(SupplierDeliveryEvent event) {
+        String msg = "Supplier delivery arrived: " + event.getUnits() + " unit(s) of product "
+                + event.getProductId() + " restocked (ref: " + event.getBuyerRef() + ")";
         log.info("Notification received: {}", msg);
         notificationRepository.save(new NotificationRecord(msg));
     }

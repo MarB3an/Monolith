@@ -1,6 +1,8 @@
 package edu.cit.pescante.inventory;
 
 import edu.cit.pescante.inventory.events.LowStockEvent;
+import edu.cit.pescante.supplier.ReorderResult;
+import edu.cit.pescante.supplier.SupplierGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,14 +25,20 @@ class InventoryServiceImpl implements InventoryService {
 
     private final InventoryRepository inventoryRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final SupplierGateway supplierGateway;
     private final int lowStockThreshold;
+    private final int reorderQuantity;
 
     InventoryServiceImpl(InventoryRepository inventoryRepository,
                          ApplicationEventPublisher eventPublisher,
-                         @Value("${inventory.low-stock-threshold:5}") int lowStockThreshold) {
+                         SupplierGateway supplierGateway,
+                         @Value("${inventory.low-stock-threshold:5}") int lowStockThreshold,
+                         @Value("${inventory.reorder-quantity:10}") int reorderQuantity) {
         this.inventoryRepository = inventoryRepository;
         this.eventPublisher = eventPublisher;
+        this.supplierGateway = supplierGateway;
         this.lowStockThreshold = lowStockThreshold;
+        this.reorderQuantity = reorderQuantity;
     }
 
     @Override
@@ -73,11 +81,17 @@ class InventoryServiceImpl implements InventoryService {
         item.setStock(newStock);
         InventoryItem savedItem = inventoryRepository.save(item);
 
-        // Low-stock auto-reorder rule: publish LowStockEvent if remaining stock drops below threshold
+        // Low-stock auto-reorder rule: publish event and trigger supplier reorder
         if (newStock < lowStockThreshold) {
-            log.warn("Product {} stock dropped to {} (threshold: {}). Publishing LowStockEvent.",
+            log.warn("Product {} stock dropped to {} (threshold: {}). Publishing LowStockEvent and initiating reorder.",
                     productId, newStock, lowStockThreshold);
             eventPublisher.publishEvent(new LowStockEvent(productId, item.getName(), newStock, lowStockThreshold));
+            try {
+                ReorderResult result = supplierGateway.reorder(productId, reorderQuantity);
+                log.info("Auto-reorder initiated for {}: {}", productId, result);
+            } catch (Exception e) {
+                log.error("Failed to initiate supplier reorder for {}: {}", productId, e.getMessage());
+            }
         }
 
         return ReservationResult.success(

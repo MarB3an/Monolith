@@ -61,6 +61,17 @@ public class MonolithApplication {
             System.setProperty("spring.datasource.username", "sa");
             System.setProperty("spring.datasource.password", "");
             System.setProperty("spring.jpa.database-platform", "org.hibernate.dialect.H2Dialect");
+            // Auto-create all JPA entity tables in H2 (supplier_orders, inventory, orders, etc.)
+            System.setProperty("spring.jpa.hibernate.ddl-auto", "create");
+        }
+
+        // Log supplier API key status (never print the actual key)
+        String lsKey = System.getenv("LS_API_KEY");
+        if (lsKey == null || lsKey.isBlank()) lsKey = System.getProperty("LS_API_KEY");
+        if (lsKey == null || lsKey.isBlank()) {
+            log.warn("[SUPPLIER] LS_API_KEY not set — supplier reorder will be skipped (set in .env)");
+        } else {
+            log.info("[SUPPLIER] LS_API_KEY configured ({}***)", lsKey.substring(0, Math.min(6, lsKey.length())));
         }
 
         SpringApplication.run(MonolithApplication.class, args);

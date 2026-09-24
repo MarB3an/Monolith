@@ -235,18 +235,6 @@ export default function App() {
         </div>
 
         <div className="header-badges">
-          <div className="integration-badge">
-            <span className="dot live"></span>
-            <span>Spring Boot 8080 (REST)</span>
-          </div>
-          <div className="integration-badge">
-            <span className="dot db"></span>
-            <span>Supabase PostgreSQL</span>
-          </div>
-          <div className="integration-badge">
-            <span className="dot event"></span>
-            <span>Spring EventPublisher</span>
-          </div>
           <button onClick={refreshAll} className="refresh-main-btn" title="Refresh all data">
             ↻ Refresh All
           </button>
@@ -261,9 +249,9 @@ export default function App() {
             <div>
               <div className="card-title">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                  <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-                  <line x1="12" y1="22.08" x2="12" y2="12"/>
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                  <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                  <line x1="12" y1="22.08" x2="12" y2="12" />
                 </svg>
                 Product Catalog
               </div>
@@ -344,8 +332,8 @@ export default function App() {
             <div>
               <div className="card-title">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/>
-                  <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>
+                  <circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" />
+                  <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
                 </svg>
                 Active Order Cart
                 {cart.length > 0 && <span className="cart-counter">{cart.length} item(s)</span>}
@@ -364,8 +352,8 @@ export default function App() {
             {cart.length === 0 ? (
               <div className="empty-cart-state">
                 <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.35 }}>
-                  <circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/>
-                  <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>
+                  <circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" />
+                  <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
                 </svg>
                 <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginTop: '0.5rem' }}>Your Cart is Empty</div>
                 <div style={{ fontSize: '0.825rem', color: 'var(--text-muted)' }}>
@@ -458,7 +446,7 @@ export default function App() {
                     <span>Validating Stock &amp; Reserving Line Items...</span>
                   ) : (
                     <>
-                      <span>Submit Multi-Item Order (REST POST)</span>
+                      <span>Submit Multi-Item Order</span>
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <line x1="5" y1="12" x2="19" y2="12"></line>
                         <polyline points="12 5 19 12 12 19"></polyline>
@@ -478,8 +466,8 @@ export default function App() {
           <div className="card-header">
             <div className="card-title">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                <polyline points="22 4 12 14.01 9 11.01"/>
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
               </svg>
               Order Submission Result
             </div>
@@ -533,9 +521,9 @@ export default function App() {
           <div>
             <div className="card-title">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                <line x1="8" y1="21" x2="16" y2="21"/>
-                <line x1="12" y1="17" x2="12" y2="21"/>
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                <line x1="8" y1="21" x2="16" y2="21" />
+                <line x1="12" y1="17" x2="12" y2="21" />
               </svg>
               Live Inventory Table (Auto-Refreshes on Order &amp; Cancel)
             </div>
@@ -602,7 +590,7 @@ export default function App() {
             <div>
               <div className="card-title">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
                 </svg>
                 Order History &amp; Actions
               </div>
@@ -681,8 +669,8 @@ export default function App() {
             <div>
               <div className="card-title">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                 </svg>
                 Domain Event Notifications
               </div>
@@ -726,8 +714,8 @@ export default function App() {
             ) : (
               <div className="empty-notifs-state">
                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.35 }}>
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                 </svg>
                 <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginTop: '0.5rem' }}>No Notifications Yet</div>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
